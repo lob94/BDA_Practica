@@ -1,0 +1,256 @@
+/*
+*/
+#include<stdlib.h>
+#include<stdio.h>
+#include<string.h>
+EXEC SQL INCLUDE SQLCA;
+
+#define MAXLEN 20
+void get_string(char *s, int maxlen){
+	fgets(s,maxlen,stdin);
+	int last = strlen(s) -1;
+	if ( (s[last]=='\r') || (s[last]=='\n') )
+		s[last] = '\0';
+}
+
+void get_password(char *s, int maxlen){
+	system("stty -echo");
+	get_string(s,maxlen);
+	system("stty echo");
+}
+
+int get_int(){
+	char s[MAXLEN];
+	get_string(s,MAXLEN);
+	return atoi(s);
+}
+
+float get_float(){
+	char s[MAXLEN];
+	get_string(s,MAXLEN);
+	return atof(s);
+}
+
+int menu()
+{
+  int opcion = -1;
+
+  int MAXOPTS = 6; /* Número de opcións do menú */
+
+  printf("Menú da aplicación\n");
+  printf("==================\n\n");
+  printf("1. Crear queja\n");
+  printf("2. Consultar historial quejas cliente\n");
+  printf("3. Modificar queja cliente\n");
+  printf("4. Consultar queja\n");
+  printf("5. Eliminar queja\n");
+
+  printf("6. Saír\n");
+
+  while ( (opcion < 1) || (opcion > MAXOPTS)){
+	  if(opcion != 0)
+      	printf("OP> ");
+      opcion=get_int();
+  }
+  return opcion;
+}
+
+
+void XestionaException(){
+  EXEC SQL WHENEVER SQLERROR CONTINUE;
+  	switch(sqlca.sqlcode){
+    		case -1017: printf("Erro conectándose a Oracle.\n"); exit (-1);
+    		case -1012: printf("Erro no estaba conectado a Oracle, saíndo do programa.\n"); exit (-1);
+			case -942: printf("Erro la tabla seleccionada no existe.\n"); break;
+		default: printf("Erro: Código %d, Mensaxe: %.*s\n",
+      			sqlca.sqlcode, sqlca.sqlerrm.sqlerrml, sqlca.sqlerrm.sqlerrmc); exit (-1);
+  }
+}
+
+int XestionaException_DML(){
+	EXEC SQL WHENEVER SQLERROR CONTINUE;
+
+	switch(sqlca.sqlcode){
+    		case -2291: printf("Dni o identificador del empleado incorrecto.\n"); break;
+			case -1: printf("La queja con ese identificador ya existe\n"); break;
+			case -1400: printf("Los campos no pueden estar vacios\n"); break;
+			case -1403: printf("La queja con ese identificador no existe\n"); break;
+			case -904: printf("La queja con ese identificador no existe\n"); break;
+		default: printf("Erro: Código %d, Mensaxe: %.*s\n",
+				sqlca.sqlcode, sqlca.sqlerrm.sqlerrml, sqlca.sqlerrm.sqlerrmc); break;
+	}
+	EXEC SQL ROLLBACK;
+	return sqlca.sqlcode;
+}
+
+void conecta_bd(){
+   EXEC SQL WHENEVER SQLERROR DO XestionaException();
+   printf("Conectando con Oracle...\n");
+   /* Introducir código para conectar coa BD*/
+	EXEC SQL BEGIN DECLARE SECTION;
+	char usuario[40];
+	char clave[40];
+	EXEC SQL END DECLARE SECTION;
+	
+	printf("Usuario: ");
+	get_string(usuario, 40);
+	printf("Contraseña: ");
+	get_password(clave, 40);
+	printf("\n");
+	EXEC SQL CONNECT :usuario IDENTIFIED BY :clave;
+}
+
+void desconecta_bd(){
+   /* Introducir código para desconectar da BD*/
+	EXEC SQL WHENEVER SQLERROR DO XestionaException();
+   	EXEC SQL COMMIT RELEASE;
+	
+	printf("Desconectado.\n");
+}
+
+void crear_queja(){
+	int error;
+	EXEC SQL WHENEVER SQLERROR DO error = XestionaException_DML(); 
+	EXEC SQL BEGIN DECLARE SECTION;
+	int idQueja;
+	char problema[300];
+	char dni[10];
+	int idEmpleado;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("Introduce código: ");
+	idQueja = get_int();
+	printf("Introduce problema: ");
+	get_string(problema, 300);
+	printf("Introduce id del empleado: ");
+	idEmpleado = get_int();
+	printf("Introduce dni: ");
+	get_string(dni, 10);
+
+	EXEC SQL INSERT INTO QUEJA(ID_QUEJA, PROBLEMA, DNI, ID_EMPLEADO)
+		VALUES(:idQueja, :problema, :dni, :idEmpleado);
+
+	if (!error){
+		EXEC SQL COMMIT;
+	}
+}
+
+void consultar_quejas_cliente(){
+	EXEC SQL WHENEVER SQLERROR CONTINUE;
+	EXEC SQL BEGIN DECLARE SECTION;
+		int idQueja;
+		char dni[10];
+		int idEmpleado;
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_quejas CURSOR FOR SELECT ID_QUEJA, ID_EMPLEADO FROM QUEJA WHERE DNI LIKE :dni;
+
+	printf("Introduzca dni cliente: ");
+	get_string(dni, 10);
+
+	EXEC SQL OPEN cursor_quejas;
+	EXEC SQL WHENEVER NOT FOUND DO break;
+	
+	while(1){
+		EXEC SQL FETCH cursor_quejas into :idQueja, :idEmpleado;
+		printf("Quejas de cliente: %s\n", dni);
+		printf("Queja número: %d, atendido por: %d\n", idQueja, idEmpleado);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+
+	printf("Quejas encontradas: %d\n", sqlca.sqlerrd[2]);
+}
+
+void modificar_queja(){
+	int error;
+	EXEC SQL WHENEVER SQLERROR DO error = XestionaException_DML(); 
+	EXEC SQL BEGIN DECLARE SECTION;
+	int idQueja;
+	char problema[300];
+	int idEmpleado;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("Introduce código: ");
+	idQueja = get_int();
+	printf("Introduce cambio del problema: ");
+	get_string(problema, 300);
+	printf("Introduce id del empleado que realiza el cambio");
+	idEmpleado = get_int();
+
+	EXEC SQL UPDATE QUEJA SET PROBLEMA = :problema, ID_EMPLEADO = :idEmpleado WHERE ID_QUEJA = :idQueja;
+
+	if (!error){
+		EXEC SQL COMMIT;
+	}
+}
+
+void consultar_queja(){
+	EXEC SQL WHENEVER SQLERROR CONTINUE; 
+	EXEC SQL BEGIN DECLARE SECTION;
+	int idQueja;
+	char problema[300];
+	char dni[9];
+	int idEmpleado;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("Introduce código de la queja a buscar: ");
+	idQueja = get_int();
+	
+	EXEC SQL SELECT ID_QUEJA, PROBLEMA, DNI, ID_EMPLEADO INTO :idQueja, :problema, :dni, :idEmpleado FROM QUEJA WHERE ID_QUEJA = :idQueja;
+	
+	if (sqlca.sqlcode == 1403){
+		printf("No existe ninguna queja con el código: %d\n", idQueja);
+	}else{
+			printf("Queja: %d\n", idQueja);
+			printf("Dni cliente: %s\n", dni);
+			printf("Atendido por: %d\n", idEmpleado);
+			printf("Problema: %s\n", problema);
+	}
+}
+
+void eliminar_queja(){
+	int error;
+	EXEC SQL WHENEVER SQLERROR DO error = XestionaException_DML(); 
+	EXEC SQL BEGIN DECLARE SECTION;
+	int idQueja;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("Introduce identificardor de la queja a eliminar: ");
+	idQueja = get_int();
+
+	EXEC SQL DELETE FROM QUEJA WHERE ID_QUEJA = :idQueja;
+
+	if(sqlca.sqlcode == 0){
+		printf("La queja con identificador %d se borró con exito\n", idQueja);
+	}
+	if(sqlca.sqlcode > 0){
+		printf("La queja con identificador %d no fue borrado con exito\n", idQueja);
+	}
+
+	if(!error){
+		EXEC SQL COMMIT;
+	}
+}
+
+/* Función principal */
+int main()
+{
+  conecta_bd();
+
+  int op;
+
+  while ( (op=menu()) != 6){
+       switch(op){
+            case 1: crear_queja(); break;
+            case 2: consultar_quejas_cliente(); break;
+			case 3: modificar_queja(); break;
+			case 4: consultar_queja(); break;
+			case 5: eliminar_queja(); break;
+       }
+
+  }
+ 
+ desconecta_bd(); 
+
+ return 0;
+}
