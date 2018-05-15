@@ -1,0 +1,650 @@
+/**************** APLICACION PARA LA GESTION DE LA BD EN PRO*C ****************/
+/**************** Autor: Elias Garcia Mariño                   ****************/
+/**************** Bases de Datos Avanzadas - TGR               ****************/
+/**************** UDC - 2016                                   ****************/
+/******************************************************************************/
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sqlca.h>
+
+/* Máxima longitud de una cadena a leer por pantalla */
+#define MAXLEN 	50
+/* Numero de opciones del menu */
+#define MAXOPTS 13
+/* Valor de retorno cuando se produce un error ORA-XXXXX*/
+#define ERROR 	-1
+
+/*
+ * Funciones de utilidad para leer valores por teclado
+ */
+void get_string(char *s, int maxlen) {
+	fgets(s, maxlen, stdin);
+	int last = strlen(s) -1;
+	if ((s[last]=='\r') || (s[last]=='\n'))
+		s[last] = '\0';
+}
+
+void get_password(char *s, int maxlen) {
+	system("stty -echo");
+	get_string(s, maxlen);
+	system("stty echo");
+}
+
+int get_int() {
+	char s[MAXLEN];
+	get_string(s, MAXLEN);
+	return atoi(s);
+}
+
+float get_float() {
+	char s[MAXLEN];
+	get_string(s, MAXLEN);
+	return atof(s);
+}
+
+/*
+ * Función de utilidad para mostrar el menú
+ */
+int menu() {
+	int opcion = -1;
+
+	printf("\n");
+	printf("-------------- MENU DE LA APLICACION-------------\n");
+	printf("-------------------------------------------------\n");
+	printf("\n");
+	printf("Busquedas\n");
+	printf("-------------------------------------------------\n");
+	printf("1.  Buscar cliente por DNI\n");
+	printf("2.  Buscar monitor por DNI\n");
+	printf("3.  Mostrar planes asociados a un cliente\n");
+	printf("4.  Mostrar ejercicios de un plan\n");
+	printf("5.  Mostrar todos los ejercicios\n");
+	printf("\n");
+	printf("Altas y bajas\n");
+	printf("-------------------------------------------------\n");
+	printf("6.  Nuevo cliente\n");
+	printf("7.  Nuevo monitor\n");
+	printf("8.  Nuevo ejercicio\n");
+	printf("9.  Nuevo plan personalizado\n");
+	printf("10. Borrar ejercicio de un plan\n");
+	printf("11. Borrar plan\n");
+	printf("\n");
+	printf("Actualizaciones\n");
+	printf("-------------------------------------------------\n");
+	printf("12. Modificar peso y altura de un cliente\n");
+	printf("13. Incrementar salario de un monitor\n");
+	printf("\n");
+	printf("Otros\n");
+	printf("-------------------------------------------------\n");
+	printf("0.  Salir\n");
+	printf("\n");
+
+	while ((opcion < 0) || (opcion > MAXOPTS)) {
+		printf("OP> ");
+		opcion = get_int();
+	}
+
+	return opcion;
+}
+
+/*
+ * FUNCIONES PARA LA GESTION DE LA BASES DE DATOS
+ */
+int gestionar_error() {
+	EXEC SQL WHENEVER SQLERROR CONTINUE;
+
+	switch(sqlca.sqlcode) {
+		case -1:
+			printf("\n> ERROR: Uno de los datos introducidos ya ha sido registrado previamente, no se puede duplicar.\n");
+			break;
+		case -943:
+			printf("\n> ERROR: La tabla no existe en la base de datos.\n");
+			break;
+		case -1005:
+			printf("\n> ERROR: La contrasena no puede ser nula.\n");
+			break;
+		case -1012:
+			printf("\n> ERROR: No esta conectado.\n");
+			break;
+		case -1017:
+			printf("\n> ERROR: Usuario o clave no validos.\n");
+			break;
+		case -1400:
+			printf("\n> ERROR: No puede dejar campos vacíos.\n");
+			break;
+		case -1438:
+			printf("\n> ERROR: Ha excedido el número de decimales permitidos (Máximo 2).\n");
+			break;
+		case -2290:
+			printf("\n> ERROR: El DNI introducido no es correcto.\n");
+			break;
+		case -2291:
+			printf("\n> ERROR: Algún campo hace referencia a un dato que no existe en la base de datos.\n");
+			break;
+		case -2800:
+			printf("\n> ERROR: La cuenta esta bloqueada\n");
+			break;
+		case -12899:
+			printf("\n> ERROR: Algún campo excede el máximo de carácteres permitidos.\n");
+			break;
+		default:
+			printf("\n> ERROR: Codigo %d, Mensaje: %.*s\n",
+				sqlca.sqlcode, sqlca.sqlerrm.sqlerrml, sqlca.sqlerrm.sqlerrmc);
+			break;
+	}
+
+	EXEC SQL ROLLBACK;
+
+	return ERROR;
+}
+
+void conecta_bd() {
+	int err;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char usuario[MAXLEN];
+		char clave[MAXLEN];
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\nNombre de usuario: ");
+	get_string(usuario, MAXLEN);
+	printf("Clave: ");
+	get_password(clave, MAXLEN);
+
+	printf("\n\n> Conectando con Oracle...\n");
+
+	EXEC SQL CONNECT :usuario IDENTIFIED BY :clave;
+
+	if (err == ERROR) {
+		exit(0);
+	}
+}
+
+void desconecta_bd() {
+	EXEC SQL WHENEVER SQLERROR DO gestionar_error();
+
+	EXEC SQL COMMIT RELEASE;
+
+	printf("\n> Desconectado.\n\n");
+}
+
+void buscar_cliente() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni[MAXLEN];
+		char dnir[MAXLEN], nombre[MAXLEN], apellidos[MAXLEN];
+		float peso, altura;
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_cliente CURSOR FOR
+			 SELECT DNI, NOMBRE, APELLIDOS, PESO, ALTURA
+			 FROM CLIENTE
+			 WHERE LOWER(DNI) = LOWER(:dni);
+
+	printf("\n> Funcion buscar_cliente()\n");
+	printf("Introduzca el DNI del cliente: ");
+	get_string(dni, MAXLEN);
+
+	EXEC SQL OPEN cursor_cliente;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_cliente
+				 INTO :dnir, :nombre, :apellidos, :peso, :altura;
+
+		printf("\nDNI: %s\n", dnir);
+ 		printf("Nombre: %s\n", nombre);
+ 		printf("Apellidos: %s\n", apellidos);
+ 		printf("Peso: %.2f\n", peso);
+ 		printf("Altura: %.2f\n", altura);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> Clientes recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_cliente;
+	EXEC SQL COMMIT;
+}
+
+void buscar_monitor() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni[MAXLEN];
+		char dnir[MAXLEN], nombre[MAXLEN], apellidos[MAXLEN];
+		float salario;
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_monitor CURSOR FOR
+			 SELECT DNI, NOMBRE, APELLIDOS, SALARIO
+			 FROM MONITOR
+			 WHERE LOWER(DNI) = LOWER(:dni);
+
+	printf("\n> Funcion buscar_monitor()\n");
+	printf("Introduzca el DNI del monitor: ");
+	get_string(dni, MAXLEN);
+
+	EXEC SQL OPEN cursor_monitor;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_monitor
+				 INTO :dnir, :nombre, :apellidos, :salario;
+
+		printf("\nDNI: %s\n", dnir);
+		printf("Nombre: %s\n", nombre);
+		printf("Apellidos: %s\n", apellidos);
+		printf("Salario: %.2f\n", salario);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> Monitores recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_monitor;
+	EXEC SQL COMMIT;
+}
+
+void buscar_planes() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni_cliente[MAXLEN];
+		char dni_monitor[MAXLEN], descripcion[MAXLEN];
+		int id;
+		float precio;
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_planes CURSOR FOR
+			 SELECT ID, DESCRIPCION, PRECIO, MONITOR_DNI
+			 FROM PLAN
+			 WHERE LOWER(CLIENTE_DNI) = LOWER(:dni_cliente)
+			 ORDER BY ID;
+
+	printf("\n> Funcion buscar_planes()\n");
+	printf("Introduzca el DNI del cliente: ");
+	get_string(dni_cliente, MAXLEN);
+
+	EXEC SQL OPEN cursor_planes;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_planes
+				 INTO :id, :descripcion, :precio, :dni_monitor;
+		printf("\nId del plan: %d\n", id);
+		printf("Descripción del plan: %s\n", descripcion);
+		printf("Precio del plan: %.2f\n", precio);
+		printf("DNI del monitor que realizó el plan: %s\n", dni_monitor);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> Planes recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_planes;
+	EXEC SQL COMMIT;
+}
+
+void mostrar_plan() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char nombre_ejercicio[MAXLEN];
+		int id_plan, repeticiones;
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_plan CURSOR FOR
+			 SELECT REPETICIONES, NOMBRE
+			 FROM LINEA L JOIN EJERCICIO E
+			 ON L.EJERCICIO_ID = E.ID
+			 WHERE L.PLAN_ID = :id_plan
+			 ORDER BY NUMERO_LINEA;
+
+	printf("\n> Funcion mostrar_plan()\n");
+ 	printf("Introduzca el Id del plan: ");
+ 	id_plan = get_int();
+
+	EXEC SQL OPEN cursor_plan;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_plan
+				 INTO :repeticiones, :nombre_ejercicio;
+
+		printf("\nEjercicio en posición: %d\n", sqlca.sqlerrd[2]);
+		printf("Nombre del ejercicio: %s\n", nombre_ejercicio);
+		printf("Repeticiones: %d\n", repeticiones);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> Ejercicios recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_plan;
+	EXEC SQL COMMIT;
+}
+
+void mostrar_ejercicios() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char nombre[MAXLEN];
+		int id;
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_ejercicios CURSOR FOR
+			 SELECT ID, NOMBRE
+			 FROM EJERCICIO
+			 ORDER BY ID;
+
+	printf("\n> Funcion mostrar_ejercicios()\n");
+
+	EXEC SQL OPEN cursor_ejercicios;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_ejercicios
+				 INTO :id, :nombre;
+
+		printf("\nId del ejercicio: %d\n", id);
+		printf("Nombre del ejercicio: %s\n", nombre);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> Ejercicios recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_ejercicios;
+	EXEC SQL COMMIT;
+}
+
+void nuevo_cliente() {
+	int err;
+	EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni[MAXLEN], nombre[MAXLEN], apellidos[MAXLEN];
+		float peso, altura;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\n> Funcion nuevo_cliente()\n");
+ 	printf("Introduzca el DNI del nuevo cliente: ");
+	get_string(dni, MAXLEN);
+	printf("Introduzca el nombre del nuevo cliente: ");
+	get_string(nombre, MAXLEN);
+	printf("Introduzca los apellidos del nuevo cliente: ");
+	get_string(apellidos, MAXLEN);
+	printf("Introduzca el peso del nuevo cliente (en kg): ");
+	peso = get_float();
+	printf("Introduzca la altura del nuevo cliente (en m): ");
+	altura = get_float();
+
+	EXEC SQL INSERT INTO CLIENTE (dni, nombre, apellidos, peso, altura)
+			 VALUES (UPPER(:dni), :nombre, :apellidos, :peso, :altura);
+
+	if (err != ERROR) {
+		EXEC SQL COMMIT;
+		printf("\n> Nuevo cliente añadido con éxito a la base de datos.\n");
+	}
+}
+
+void nuevo_monitor() {
+	int err;
+	EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni[MAXLEN], nombre[MAXLEN], apellidos[MAXLEN];
+		float salario;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\n> Funcion nuevo_monitor()\n");
+	printf("Introduzca el DNI del nuevo monitor: ");
+	get_string(dni, MAXLEN);
+	printf("Introduzca el nombre del nuevo monitor: ");
+	get_string(nombre, MAXLEN);
+	printf("Introduzca los apellidos del nuevo monitor: ");
+	get_string(apellidos, MAXLEN);
+	printf("Introduzca el salario del nuevo monitor: ");
+	salario = get_float();
+
+	EXEC SQL INSERT INTO MONITOR (dni, nombre, apellidos, salario)
+			 VALUES (UPPER(:dni), :nombre, :apellidos, :salario);
+
+	if (err != ERROR) {
+		EXEC SQL COMMIT;
+		printf("\n> Nuevo monitor añadido con éxito a la base de datos.\n");
+	}
+}
+
+void nuevo_ejercicio() {
+	int err;
+	EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char nombre[MAXLEN];
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\n> Funcion nuevo_ejercicio()\n");
+	printf("Introduzca el nombre del nuevo ejercicio: ");
+	get_string(nombre, MAXLEN);
+
+	EXEC SQL INSERT INTO EJERCICIO (nombre)
+			 VALUES (:nombre);
+
+	if (err != ERROR) {
+		EXEC SQL COMMIT;
+		printf("\n> Nuevo ejercicio añadido con éxito a la base de datos.\n");
+	}
+}
+
+void nuevo_plan() {
+	int err;
+	EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char descripcion[MAXLEN], dni_cliente[MAXLEN], dni_monitor[MAXLEN];
+		float precio;
+		int repeticiones, id_plan, id_ejercicio;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\n> Funcion nuevo_plan()\n");
+	printf("Introduzca una descripción para el nuevo plan: ");
+	get_string(descripcion, MAXLEN);
+	printf("Introduzca el dni del cliente asociado al nuevo plan: ");
+	get_string(dni_cliente, MAXLEN);
+	printf("Introduzca el dni del monitor que supervisará el nuevo plan: ");
+	get_string(dni_monitor, MAXLEN);
+	printf("Introduzca el precio del nuevo plan: ");
+	precio = get_float();
+
+	EXEC SQL INSERT INTO PLAN (descripcion, precio, cliente_dni, monitor_dni)
+			 VALUES (:descripcion, :precio, UPPER(:dni_cliente), UPPER(:dni_monitor))
+			 RETURNING ID INTO :id_plan;
+
+	if (err != ERROR) {
+		int opt = -1;
+		while (opt != 0) {
+			printf("Introduzca el Id del ejercicio que desea añadir al plan: ");
+			id_ejercicio = get_int();
+			printf("Introduzca el número de repeticiones que se repetirá el ejercicio: ");
+			repeticiones = get_int();
+
+			EXEC SQL INSERT INTO LINEA (repeticiones, plan_id, ejercicio_id)
+					 VALUES (:repeticiones, :id_plan, :id_ejercicio);
+
+			if (err == ERROR) {
+				break;
+			}
+
+			printf("¿Desea añadir más ejercicios al plan? (0:NO, 1:SI): ");
+			opt = get_int();
+		}
+
+		if (err != ERROR) {
+			EXEC SQL COMMIT;
+			printf("\n> Nuevo plan añadido con éxito a la base de datos.\n");
+		}
+	}
+}
+
+void borrar_ejercicio() {
+	int err;
+	EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		int id_plan, id_ejercicio;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\n> Funcion borrar_ejercicio()\n");
+	printf("Introduzca el Id del plan del cual desea borrar un ejercicio: ");
+	id_plan = get_int();
+	printf("Introduzca el Id del ejercicio que desea borrar: ");
+	id_ejercicio = get_int();
+
+	EXEC SQL DELETE FROM LINEA
+			 WHERE PLAN_ID = :id_plan AND EJERCICIO_ID = :id_ejercicio;
+
+	if (err != ERROR) {
+		if (sqlca.sqlcode == 1403) {
+			EXEC SQL COMMIT;
+			printf("\n> No se ha encontrado el ejercicio en el plan.\n");
+		} else {
+			EXEC SQL COMMIT;
+			printf("\n> Ejercicio borrado con éxito del plan de entrenamiento.\n");
+		}
+	}
+}
+
+void borrar_plan() {
+	int err;
+	EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		int id_plan;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\n> Funcion borrar_plan()\n");
+	printf("Introduzca el Id del plan que desea borrar: ");
+	id_plan = get_int();
+
+	EXEC SQL DELETE FROM LINEA
+			 WHERE PLAN_ID = :id_plan;
+
+	if (err != ERROR) {
+		EXEC SQL DELETE FROM PLAN
+				 WHERE ID = :id_plan;
+
+		if (sqlca.sqlcode == 1403) {
+			EXEC SQL COMMIT;
+			printf("\n> No se ha encontrado el plan especificado.\n");
+		} else {
+			EXEC SQL COMMIT;
+			printf("\n> Plan borrado con éxito de la base de datos.\n");
+		}
+	}
+}
+
+void actualizar_datos() {
+	int err;
+	EXEC SQL SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni[MAXLEN];
+		float peso, altura;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\n> Funcion actualiza_datos()\n");
+	printf("Introduzca el DNI del cliente del cual desea actualizar los datos: ");
+	get_string(dni, MAXLEN);
+	printf("Introduzca el nuevo peso del cliente(en kg): ");
+	peso = get_float();
+	printf("Introduzca la nueva altura del cliente (en m): ");
+	altura = get_float();
+
+	EXEC SQL UPDATE CLIENTE
+			 SET PESO = :peso, ALTURA = :altura
+			 WHERE DNI = UPPER(:dni);
+
+	if (err != ERROR) {
+		if (sqlca.sqlcode == 1403) {
+			EXEC SQL COMMIT;
+			printf("\n> No se ha encontrado el cliente especificado.\n");
+		} else {
+			EXEC SQL COMMIT;
+			printf("\n> Datos actualizados con éxito.\n");;
+		}
+	}
+}
+
+void incrementar_salario() {
+	int err;
+	EXEC SQL SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+	EXEC SQL WHENEVER SQLERROR DO err = gestionar_error();
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni[MAXLEN];
+		float incremento;
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\n> Funcion incrementar_salario()\n");
+	printf("Introduzca el DNI del monitor del cual desea incrementar el salario: ");
+	get_string(dni, MAXLEN);
+	printf("¿En cuanto desea incrementar el salario?: ");
+	incremento = get_float();
+
+	EXEC SQL UPDATE MONITOR
+			 SET SALARIO = SALARIO + :incremento
+			 WHERE DNI = UPPER(:dni);
+
+	if (err != ERROR) {
+		if (sqlca.sqlcode == 1403) {
+			EXEC SQL COMMIT;
+			printf("\n> No se ha encontrado el monitor especificado.\n");
+		} else {
+			EXEC SQL COMMIT;
+			printf("\n> Salario incrementado con éxito.\n");;
+		}
+	}
+}
+
+/*
+ * Funcion principal
+ */
+int main() {
+	conecta_bd();
+
+	int op;
+	while ((op = menu()) != 0) {
+		switch(op) {
+            case 1:  buscar_cliente();
+					 break;
+            case 2:  buscar_monitor();
+					 break;
+			case 3:  buscar_planes();
+					 break;
+			case 4:  mostrar_plan();
+					 break;
+			case 5:  mostrar_ejercicios();
+					 break;
+			case 6:  nuevo_cliente();
+					 break;
+			case 7:  nuevo_monitor();
+					 break;
+			case 8:  nuevo_ejercicio();
+					 break;
+			case 9:  nuevo_plan();
+					 break;
+			case 10: borrar_ejercicio();
+					 break;
+			case 11: borrar_plan();
+					 break;
+			case 12: actualizar_datos();
+					 break;
+			case 13: incrementar_salario();
+					 break;
+       }
+	}
+	desconecta_bd();
+	return 0;
+}

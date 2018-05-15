@@ -1,0 +1,548 @@
+
+/*
+ * 
+ * Roberto Insua Brandariz 
+ * Diego Tejeda Valcárcel 
+ * Universidade da Coruña
+ *
+ * BDA - Curso 2015-16
+ *
+ * Esqueleto de programa en Pro*C
+ */
+
+#include<stdlib.h>
+#include<stdio.h>
+#include<string.h>
+EXEC SQL INCLUDE SQLCA;
+
+/*
+ * Utilidades para menús e ler valores por teclado. 
+ * En "teclado.c" están repetidas con exemplos de uso 
+ */
+#define MAXLEN 20
+void get_string(char *s, int maxlen){
+	fgets(s,maxlen,stdin);
+	int last = strlen(s) -1;
+	if ( (s[last]=='\r') || (s[last]=='\n') )
+		s[last] = '\0';
+}
+
+void get_password(char *s, int maxlen){
+	system("stty -echo");
+	get_string(s,maxlen);
+	system("stty echo");
+}
+
+int get_int(){
+	char s[MAXLEN];
+	get_string(s,MAXLEN);
+	return atoi(s);
+}
+
+float get_float(){
+	char s[MAXLEN];
+	get_string(s,MAXLEN);
+	return atof(s);
+}
+
+int menu()
+{
+  int opcion = -1;
+
+  int MAXOPTS = 10; /* Número de opcións do menú */
+
+  printf("Menú da aplicación\n");
+  printf("==================\n\n");
+  printf("1. Recuperar usuarios\n");
+  printf("2. Buscar Usuario por DNI\n");
+  printf("3. Ver carriño\n");
+  printf("4. Buscar produto por nome\n");
+  printf("5. Eliminar/Actualizar cantidade\n");
+  printf("6. Engadir produto ao carriño\n");
+  printf("----------------------------------\n");
+  printf("7. Crear produto\n");
+  printf("8. Eliminar produto\n");
+  printf("9. Actualizar existencias\n");
+
+  printf("0. Saír\n");
+
+  while ( (opcion < 0) || (opcion > MAXOPTS)){
+      printf("OP> ");
+      opcion=get_int();
+  }
+  return opcion;
+}
+
+void XestionaExcepcion() {
+  EXEC SQL WHENEVER SQLERROR CONTINUE;
+
+  if (sqlca.sqlcode == -1017) {
+    printf("Erro conectándose a Oracle: nome de usuario/contrasinal non válidos\n");
+    exit(-1017);
+  }
+  else if (sqlca.sqlcode = -1405)
+    printf("\n"); //mensaxe en cada unha das funcions
+  
+
+  else 
+    printf("Erro: Código %d, Mensaxe %s \n", sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+}
+
+/* Funcionalidadess de base de datos */
+
+void conecta_bd(){
+
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+  printf("Conectando con Oracle...\n");
+  /* Introducir código para conectar coa BD*/
+
+  EXEC SQL BEGIN DECLARE SECTION;
+  char user[40];
+  char pwd[40];
+  EXEC SQL END DECLARE SECTION;
+
+  printf("Introduzca su login:\n");
+  get_string(user,40);
+  printf("Introduzca su password:\n");
+  get_password(pwd,40);
+
+  EXEC SQL CONNECT :user IDENTIFIED BY :pwd;
+
+  if (sqlca.sqlcode == 0)
+    printf("O usuario %s conectouse a Oracle\n", user);
+}
+
+
+//se conecta automaticamente
+void conecta_bd_automatica(){
+
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+  printf("Conectando con Oracle...\n");
+  /* Introducir código para conectar coa BD*/
+
+  EXEC SQL BEGIN DECLARE SECTION;
+  char user[40] = "\"roberto.insua\"";
+  char pwd[40] = "79342569K";
+
+  EXEC SQL END DECLARE SECTION;
+
+  printf("%s\n", user);
+  EXEC SQL CONNECT :user IDENTIFIED BY :pwd;
+
+  if (sqlca.sqlcode == 0)
+    printf("O usuario %s conectouse a Oracle\n", user);
+}
+
+
+void desconecta_bd(){
+    EXEC SQL COMMIT RELEASE;
+   /* Introducir código para desconectar da BD*/
+   printf("Desconectado.\n");
+}
+
+
+////////////////////////////////////////////////////////////////////////////
+
+void recuperar_usuarios(){
+
+  EXEC SQL SET TRANSACTION READ ONLY;
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+    char dni[10], nome[15], apelidos[25], nick[15], email[25];
+  EXEC SQL END DECLARE SECTION;
+
+  printf("\n> Funcion recuperar_usuarios()\n");
+
+
+  EXEC SQL DECLARE cursor_usuario CURSOR FOR
+       SELECT *
+       FROM USUARIO;
+
+
+  EXEC SQL OPEN cursor_usuario;
+  EXEC SQL WHENEVER NOT FOUND DO BREAK;
+  printf("\n    DNI      NOME                APELIDOS             NICK             EMAIL\n");
+  printf("----------------------------------------------------------------------------------------");
+  while(1) {
+    EXEC SQL FETCH cursor_usuario
+         INTO :dni, :nome, :apelidos, :nick, :email;
+    printf("\n%10s %15s %25s %15s %25s", dni, nome, apelidos, nick, email);
+  }
+  printf("\n--------------------------------------------------------------------------------------");
+
+  EXEC SQL WHENEVER NOT FOUND CONTINUE;
+  printf("\n> usuarios recuperados: %d.\n", sqlca.sqlerrd[2]);
+  EXEC SQL CLOSE cursor_usuario;
+  EXEC SQL COMMIT;
+}
+
+////////////////////////////////////////////////////////////////////////////
+
+void buscar_usuario() {
+  EXEC SQL SET TRANSACTION READ ONLY;
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+    int i;
+    char dni[10], dnir[MAXLEN], nome[MAXLEN], apelidos[MAXLEN], nick[MAXLEN], email[MAXLEN];
+  EXEC SQL END DECLARE SECTION;
+
+  printf("\n> Funcion buscar_usuario()\n");
+  printf("Introduza o DNI do usuario: ");
+  get_string(dni, 10);
+
+  EXEC SQL SELECT nome, email, nick, apelidos
+      INTO :nome, :email, :nick, :apelidos
+      FROM usuario
+      WHERE dni= :dni;
+
+  if ((sqlca.sqlerrd[2])==1)
+    printf("\nPersoa seleccionada: %s\nEmail: %s \n\n", nome, email);
+  else 
+    printf("Non encontrado\n\n");
+  EXEC SQL COMMIT;
+}
+////////////////////////////////////////////////////////////////////////////
+
+void vercarrinho(){
+  EXEC SQL SET TRANSACTION READ ONLY;
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+    char dni[10], nome[25];
+    float prezo, subtotal, total;
+    int cantidade, idC;
+    short indicador;
+  EXEC SQL END DECLARE SECTION;
+
+  printf("\n> Funcion vercarrinho()\n");
+  printf("Introduza o DNI do usuario: ");
+  get_string(dni, 10);
+
+  EXEC SQL DECLARE cursor_carriño CURSOR FOR
+    SELECT p.nome, p.prezo, l.cantidade, (l.cantidade*p.prezo) AS subtotal
+    FROM liñacarriño l JOIN produto p
+      ON l.produto_idproduto = p.idProduto
+    WHERE l.carriño_idcarriño = (SELECT idCarriño
+                                  FROM carriño
+                                  WHERE usuario_dni=:dni);
+
+  EXEC SQL SELECT sum(l.cantidade*p.prezo)
+    INTO :total
+    FROM liñacarriño l JOIN produto p
+      ON l.produto_idproduto = p.idProduto
+    WHERE l.carriño_idcarriño = (SELECT idCarriño
+                    FROM carriño
+                      WHERE usuario_dni=:dni);
+
+  EXEC SQL SELECT idCarriño
+    INTO :idC
+    FROM carriño
+    WHERE usuario_dni=:dni;
+
+  if(idC==0)
+    printf("\nNon existe o carriño. DNI incorrecto?\n");
+  else if(sqlca.sqlerrd[2]==0)
+      printf("\nCarriño baleiro!\n");
+  else{
+    printf("\n Id de carriño = %d", idC);
+    printf("\n NOME                         PREZO       CANTIDADE     SUBTOTAL\n");
+    printf("---------------------------------------------------------------------");
+    EXEC SQL OPEN cursor_carriño;
+    EXEC SQL WHENEVER NOT FOUND DO BREAK;
+    while(1) {
+      EXEC SQL FETCH cursor_carriño
+           INTO :nome:indicador, :prezo, :cantidade, :subtotal;
+
+      if(indicador==0)
+        printf("\n %20s %10.2f %10d %15.2f", nome, prezo, cantidade, subtotal);
+      else
+        printf("\nCarriño vacío");
+    }
+    EXEC SQL WHENEVER NOT FOUND CONTINUE;
+    
+  
+    printf("\n---------------------------------------------------------------------");
+    printf("\n TOTAL:%.2f\n", total);
+
+    printf("\n> produtos recuperados: %d.\n\n", sqlca.sqlerrd[2]);
+  }
+  
+  EXEC SQL CLOSE cursor_carriño;
+}
+
+////////////////////////////////////////////////////////////////////////////
+
+
+void buscar_produto() {
+  EXEC SQL SET TRANSACTION READ ONLY;
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+    char nome[MAXLEN], nomepreparado[MAXLEN+2];
+    char nomer[MAXLEN], descricion[60];
+    float prezo;
+    int stock;
+  EXEC SQL END DECLARE SECTION;
+
+
+
+  printf("\n> Funcion buscar_produto()\n");
+  printf("Introduza o nome do produto: ");
+  get_string(nome, MAXLEN);
+
+  strcpy(nomepreparado, "%");
+  strcat(nomepreparado, nome);
+  strcat(nomepreparado,"%");
+
+
+
+  EXEC SQL DECLARE cursor_produto CURSOR FOR
+       SELECT NOME, DESCRICION, PREZO, STOCK
+       FROM PRODUTO
+       WHERE LOWER(nome) like LOWER(:nomepreparado);
+
+
+  EXEC SQL OPEN cursor_produto;
+  EXEC SQL WHENEVER NOT FOUND DO BREAK;
+  while(1) {
+    EXEC SQL FETCH cursor_produto
+         INTO :nomer, :descricion, :prezo, :stock;
+
+    printf("\nNome: %s\n", nomer);
+    printf("Descricion: %s\n", descricion);
+    printf("Prezo: %8.2f\n", prezo);
+    printf("Stock: %d\n", stock);
+  }
+  EXEC SQL WHENEVER NOT FOUND CONTINUE;
+  printf("\n> produtos recuperados: %d.\n", sqlca.sqlerrd[2]);
+  EXEC SQL CLOSE cursor_produto;
+  EXEC SQL COMMIT;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+
+void actualizar_cantidade(){
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+        int cantidade, idC, idProduto, contador=0;
+  EXEC SQL END DECLARE SECTION;
+
+  printf("\n> Función actualizar_cantidade\n");
+  printf("Introduzca o ID do carriño\n");
+  idC=get_int();
+  printf("Introduzca o ID de produto\n");
+  idProduto=get_int();
+
+  EXEC SQL SELECT count(*) 
+      INTO :contador
+      FROM LIÑACARRIÑO
+      WHERE carriño_idcarriño = :idC AND produto_idproduto=:idProduto;
+
+  if (contador==0)
+    printf("\nErro: non existe o produto no carriño, elixa engadir\n\n");
+  else {
+
+
+    printf("Introduzca a cantidade, 0 = elimina\n");
+    cantidade=get_int();
+
+    if(cantidade==0){
+      EXEC SQL UPDATE PRODUTO
+        SET STOCK = STOCK + (SELECT CANTIDADE
+                              FROM LIÑACARRIÑO
+                              WHERE carriño_idcarriño=:idC 
+                              AND produto_idproduto=:idProduto)
+        WHERE idproduto = :idProduto;
+
+      EXEC SQL DELETE FROM LIÑACARRIÑO
+        WHERE carriño_idcarriño=:idC AND produto_idproduto=:idProduto;
+        printf("\nEliminado produto\n\n");
+    }
+    else if (cantidade<0)
+      printf("\nCantidade incorrecta\n\n");
+    else{
+      EXEC SQL UPDATE PRODUTO
+        SET STOCK = (STOCK - :cantidade + (SELECT CANTIDADE
+                              FROM LIÑACARRIÑO
+                              WHERE carriño_idcarriño=:idC 
+                              AND produto_idproduto=:idProduto))
+        WHERE idproduto = :idProduto;
+
+      if(sqlca.sqlcode == 0){
+        EXEC SQL UPDATE LIÑACARRIÑO
+        SET CANTIDADE=:cantidade
+          WHERE carriño_idcarriño=:idC AND produto_idproduto = :idProduto;
+          printf("\nCantidade actualizada\n");
+      }
+      else
+        printf("\nStock insuficiente\n");
+
+    }
+    EXEC SQL COMMIT;
+  }
+}
+/////////////////////////////////////////////////////////////////////////////
+void engadir_produto_carrinho() {
+
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+        int cantidade, idC, idProduto, contador = 0;
+  EXEC SQL END DECLARE SECTION;
+
+  printf("\n> Función actualizar_cantidade\n");
+  printf("Introduzca o ID do carriño\n");
+  idC=get_int();
+  printf("Introduzca o ID de produto\n");
+  idProduto=get_int();
+
+
+  EXEC SQL SELECT count(*) 
+    INTO :contador
+    FROM LIÑACARRIÑO
+    WHERE carriño_idcarriño = :idC AND produto_idproduto=:idProduto;
+
+  if (contador>0)
+    printf("\nErro: xa existe o produto no carriño, elixa actualizar\n\n");
+  else {
+
+  printf("Introduzca a cantidade\n");
+  cantidade=get_int();
+
+    EXEC SQL UPDATE PRODUTO
+    SET STOCK = (STOCK - :cantidade)
+    WHERE idproduto = :idProduto;
+
+
+    EXEC SQL INSERT INTO liñacarriño (cantidade, carriño_idcarriño, produto_idproduto)
+             VALUES (:cantidade, :idC, :idProduto);
+
+    EXEC SQL COMMIT;
+    if (sqlca.sqlcode = -1405)
+      printf("Non hai suficientes existencias\n\n");
+    else
+      printf("\n> Produto(s) engadido(s) con éxito ao carriño.\n\n");
+
+
+  }
+ 
+}
+///////////////////////////////////////////////////////////////////////////
+
+void actualizar_stock(){
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+        int cantidade, idProduto;
+  EXEC SQL END DECLARE SECTION;
+
+  printf("\n> Función actualizar_cantidade\n");
+  printf("Introduzca o ID de produto\n");
+  idProduto=get_int();
+  printf("Introduzca a cantidade\n");
+  cantidade=get_int();
+
+  
+    EXEC SQL UPDATE PRODUTO
+      SET STOCK = :cantidade
+      WHERE idproduto = :idProduto;
+
+    if (sqlca.sqlcode == 0)
+      printf("\n> Produto(s) engadido(s) con éxito ao carriño.\n\n");
+    else
+      printf("Erro: inserte correctamente os datos\n\n");
+
+
+  EXEC SQL COMMIT;
+}
+
+void novo_produto() {
+  EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+   char nome[MAXLEN], descricion[MAXLEN];
+   float prezo;
+   int stock;
+  EXEC SQL END DECLARE SECTION;
+
+
+  printf("Función novo_produto()\n");
+  printf("Introduza o nome do produto\n");
+  get_string(nome, MAXLEN);
+  printf("Introduza a descricion do produto\n");
+  get_string(descricion, MAXLEN);
+  printf("Introduza o prezo do produto \n");
+  prezo = get_float();
+  printf("Introduza o stock do produto\n");
+  stock = get_int();
+
+
+ EXEC SQL INSERT INTO produto (nome, descricion, prezo, stock)
+      VALUES (:nome, :descricion, :prezo, :stock);
+
+ EXEC SQL COMMIT;
+ if (sqlca.sqlcode = -1405)
+    printf("\nError en los datos, inserte datos válidos\n\n");
+ else
+  printf("\nProduto engadido con éxito.\n\n");
+ 
+}
+
+void eliminar_produto() {
+ EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+ EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+ EXEC SQL WHENEVER NOT FOUND CONTINUE;
+
+ EXEC SQL BEGIN DECLARE SECTION;
+   int id;
+ EXEC SQL END DECLARE SECTION;
+
+ printf("Introduza o id do produto a eliminar: \n");
+ id=get_int();
+
+ EXEC SQL DELETE FROM produto
+          WHERE idProduto=:id;
+
+ if (sqlca.sqlcode == 1403) {
+  printf("\nProduto non dispoñible\n\n");
+        EXEC SQL COMMIT;
+ } else {
+        printf("\nProduto eliminado exitosamente do almacen e retirado dos carriños\n\n");
+        EXEC SQL COMMIT;
+ }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+/* Función principal */
+int main()
+{
+  conecta_bd();
+//conecta_bd_automatica();
+  int op;
+
+  while ( (op=menu()) != 0){
+       switch(op){
+            case 1: recuperar_usuarios(); break;
+            case 2: buscar_usuario(); break;
+            case 3: vercarrinho(); break;
+            case 4: buscar_produto(); break;
+            case 5: actualizar_cantidade(); break;
+            case 6: engadir_produto_carrinho(); break;
+            case 7: novo_produto(); break;
+            case 8: eliminar_produto(); break;
+            case 9: actualizar_stock(); break; 
+            
+       }
+
+  }
+ 
+ desconecta_bd(); 
+
+ return 0;
+}
+

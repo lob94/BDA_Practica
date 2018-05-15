@@ -1,0 +1,28 @@
+void novo_produto() {
+  EXEC SQL SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+   char nome[MAXLEN], descricion[MAXLEN];
+   float prezo;
+   int stock;
+  EXEC SQL END DECLARE SECTION;
+
+ printf("Funci�n novo_produto()\n");
+ printf("Introduza o nome do produto: \n");
+ get_string(nome,MAXLEN);
+ printf("Introduza a descricion do produto: \n");
+ get_string(descricion,MAXLEN);
+ printf("Introduza o prezo do produto: \n");
+ prezo=get_float();
+ printf("Introduza o stock do produto: \n");
+ stock=get_int();
+
+ EXEC SQL INSERT INTO produto (nome, descricion, prezo)
+      VALUES (:nome, :descricion, :prezo, :stock);
+
+ EXEC SQL COMMIT;
+
+ printf("Produto engadido con �xito.\n");
+ 
+}

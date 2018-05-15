@@ -1,0 +1,318 @@
+/**************** APLICACION PRA XESTION DA BD EN PRO*C ****************/
+/**************** Autor: Diego Tejeda Valcárcel                ****************/
+/**************** Autor: Roberto Insua Brandariz               ****************/
+/**************** Bases de Datos Avanzadas - TGR               ****************/
+/**************** UDC - 2016                                   ****************/
+/******************************************************************************/
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sqlca.h>
+
+/* Máxima longitud dunha cadena a leer por pantalla */
+#define MAXLEN 	50
+/* Numero de opcións do menú */
+#define MAXOPTS 12
+/* Valor de retorno cando se produce un error ORA-XXXXX*/
+#define ERROR 	-1
+
+/*
+ * Funciones de utilidad pra ler valores por teclado
+ */
+void get_string(char *s, int maxlen) {
+	fgets(s, maxlen, stdin);
+	int last = strlen(s) -1;
+	if ((s[last]=='\r') || (s[last]=='\n'))
+		s[last] = '\0';
+}
+
+void get_password(char *s, int maxlen) {
+	system("stty -echo");
+	get_string(s, maxlen);
+	system("stty echo");
+}
+
+int get_int() {
+	char s[MAXLEN];
+	get_string(s, MAXLEN);
+	return atoi(s);
+}
+
+float get_float() {
+	char s[MAXLEN];
+	get_string(s, MAXLEN);
+	return atof(s);
+}
+
+/*
+ * Función de utilidad pra mostrar o menú
+ */
+int menu() {
+	int opcion = -1;
+
+	printf("\n");
+	printf("-------------- MENU DE LA APLICACION-------------\n");
+	printf("-------------------------------------------------\n");
+	printf("\n");
+	printf("Busquedas\n");
+	printf("-------------------------------------------------\n");
+	printf("1.  Buscar usuario por DNI\n");
+	printf("2.  Buscar produtos por nome\n");
+	printf("3.  Buscar produtos por rango de precio\n");
+	printf("4.  Mostrar un carriño e contenido\n");
+	printf("\n");
+	printf("Altas e Baixas\n");
+	printf("-------------------------------------------------\n");
+	printf("5.  Novo usuario\n");
+	printf("6.  Novo carriño\n");
+	printf("7.  Novo carriño\n");
+	printf("8.  Añadir produto a un carriño\n");
+	printf("9.  Eliminar produto\n");
+	printf("10. Dar de baixa usuario\n");
+	printf("\n");
+	printf("Actualizacions\n");
+	printf("-------------------------------------------------\n");
+	printf("11. Modificar nick dun usuario\n");
+	printf("12. Incrementar precio dun produto\n");
+	printf("\n");
+	printf("Outros\n");
+	printf("-------------------------------------------------\n");
+	printf("0.  Sair\n");
+	printf("\n");
+
+	while ((opcion < 0) || (opcion > MAXOPTS)) {
+		printf("OP> ");
+		opcion = get_int();
+	}
+
+	return opcion;
+}
+
+/*
+ * FUNCIONS PRA XESTION DA BASE DE DATOS
+ */
+int xestion_erro() {
+	EXEC SQL WHENEVER SQLERROR CONTINUE;
+
+	switch(sqlca.sqlcode) {
+		case -1:
+			printf("\n> ERROR: Un dos datos introducidos xa foi rexistrado previamente. Non se poden duplicar.\n");
+			break;
+		case -943:
+			printf("\n> ERROR: A tabla indicada non existe.\n");
+			break;
+		case -1005:
+			printf("\n> ERROR: A contrasinal non pode ser nula.\n");
+			break;
+		case -1012:
+			printf("\n> ERROR: Non esta conectado.\n");
+			break;
+		case -1017:
+			printf("\n> ERROR: Usuario e/ou contrasinal incorrectos.\n");
+			break;
+		case -1400:
+			printf("\n> ERROR: Non pode deixar campos vacios.\n"); /* ESTE FAI FALLA????*/
+			break;
+		case -1438:
+			printf("\n> ERROR: Os decimais introducidos superan a precision permitida (Max 2 decimais).\n");
+			break;
+		case -2290:
+			printf("\n> ERROR: O DNI introducido e incorrecto\n");
+			break;
+		case -2291:
+			printf("\n> ERROR: Algun campo fai referencia a un dato que non existe.\n");
+			break;
+		case -2800:
+			printf("\n> ERROR: A conta esta bloqueada\n"); /* E ESTE???? */
+			break;
+		case -12899:
+			printf("\n> ERROR: Algun campo excede o max de caracteres permitido.\n");
+			break;
+		default:
+			printf("\n> ERROR: Codigo %d, Mensaje: %.*s\n",
+				sqlca.sqlcode, sqlca.sqlerrm.sqlerrml, sqlca.sqlerrm.sqlerrmc);
+			break;
+	}
+
+	EXEC SQL ROLLBACK;
+
+	return ERROR;
+}
+
+void conecta_bd() {
+	int erro;
+	EXEC SQL WHENEVER SQLERROR DO erro = xestion_erro();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char usuario[MAXLEN];
+		char contrasinal[MAXLEN];
+	EXEC SQL END DECLARE SECTION;
+
+	printf("\nIntroduza o nome de usuario: ");
+	get_string(usuario, MAXLEN);
+	printf("Introduza o contrasinal");
+	get_password(clave, MAXLEN);
+
+	printf("\n\n> Conectando con Oracle...\n");
+
+	EXEC SQL CONNECT :usuario IDENTIFIED BY :clave;
+
+	if (err == ERROR) {
+		exit(0);
+	}
+}
+
+void desconecta_bd() {
+	EXEC SQL WHENEVER SQLERROR DO xestion_erro();
+
+	EXEC SQL COMMIT RELEASE;
+
+	printf("\n> Desconectado.\n\n");
+}
+
+void buscar_usuario() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO xestion_erro();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni[MAXLEN];
+		char dnir[MAXLEN], nome[MAXLEN], apelidos[MAXLEN], nick[MAXLEN], email[MAXLEN];
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_usuario CURSOR FOR
+			 SELECT DNI, NOME, APELIDOS, NICK, EMAIL
+			 FROM USUARIO
+			 WHERE LOWER(DNI) = LOWER(:dni);
+
+	printf("\n> Funcion buscar_usuario()\n");
+	printf("Introduza o DNI do usuario: ");
+	get_string(dni, MAXLEN);
+
+	EXEC SQL OPEN cursor_usuario;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_cliente
+				 INTO :dnir, :nombre, :apelidos, :nick, :email;
+
+		printf("\nDNI: %s\n", dnir);
+ 		printf("Nome: %s\n", nombre);
+ 		printf("Apelidos: %s\n", apelidos);
+ 		printf("nick: %.2f\n", peso);
+ 		printf("email: %.2f\n", altura);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> usuarios recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_usuario;
+	EXEC SQL COMMIT;
+}
+
+void buscar_produto() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO xestion_erro();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char nome[MAXLEN];
+		char nomer[MAXLEN], descricion[MAXLEN];
+		float prezo
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_produto CURSOR FOR
+			 SELECT NOME, DESCRICION, PREZO
+			 FROM PRODUTO
+			 WHERE LOWER(nome) = LOWER(:nome);
+
+	printf("\n> Funcion buscar_produto()\n");
+	printf("Introduza o nome do produto: ");
+	get_string(dni, MAXLEN);
+
+	EXEC SQL OPEN cursor_produto;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_produto
+				 INTO :nomer, :descricion, :prezo;
+
+		printf("\nNome: %s\n", nomer);
+ 		printf("Descricion: %s\n", descricion);
+ 		printf("Prezo: %s\n", prezo);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> produtos recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_produto;
+	EXEC SQL COMMIT;
+}
+
+void buscar_produto_prezo() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO xestion_erro();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		float minprezo, maxprezo;
+		char nomer[MAXLEN], descricion[MAXLEN];
+		float prezo
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_produto2 CURSOR FOR
+			 SELECT NOME, DESCRICION, PREZO
+			 FROM PRODUTO
+			 WHERE prezo>=minprezo AND prezo<=minprezo;
+
+	printf("\n> Funcion buscar_produto_prezo()\n");
+	printf("Introduza o prezo minimo da busqueda\n: ");
+	get_float(minprezo, MAXLEN);
+	printf("Introduza o prezo maximo da busqueda: ");
+	get_float(maxprezo, MAXLEN);
+
+
+	EXEC SQL OPEN cursor_produto;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_produto2
+				 INTO :nomer, :descricion, :prezo;
+
+		printf("\nNome: %s\n", nomer);
+ 		printf("Descricion: %s\n", descricion);
+ 		printf("Prezo: %s\n", prezo);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> produtos recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_produto2;
+	EXEC SQL COMMIT;
+}
+
+/* ESTE COMO FARIAMOS A BUSQUEDA? POR ID DE CARRIÑO? OU POR DNI DO CLIENTE E MOSTRAR CARRIÑO*/
+
+void mostrar_carriño() {
+	EXEC SQL SET TRANSACTION READ ONLY;
+	EXEC SQL WHENEVER SQLERROR DO xestion_erro();
+
+	EXEC SQL BEGIN DECLARE SECTION;
+		char dni_usuario[MAXLEN];
+		int id_carriño, idLiñaCarriño, cantidade, id_produto;
+	EXEC SQL END DECLARE SECTION;
+
+	EXEC SQL DECLARE cursor_carriño CURSOR FOR
+			 SELECT ID, DESCRIPCION, PRECIO, MONITOR_DNI
+			 FROM PLAN
+			 WHERE LOWER(CLIENTE_DNI) = LOWER(:dni_cliente)
+			 ORDER BY ID;
+
+	printf("\n> Funcion buscar_planes()\n");
+	printf("Introduzca el DNI del cliente: ");
+	get_string(dni_cliente, MAXLEN);
+
+	EXEC SQL OPEN cursor_planes;
+	EXEC SQL WHENEVER NOT FOUND DO BREAK;
+	while(1) {
+		EXEC SQL FETCH cursor_planes
+				 INTO :id, :descripcion, :precio, :dni_monitor;
+		printf("\nId del plan: %d\n", id);
+		printf("Descripción del plan: %s\n", descripcion);
+		printf("Precio del plan: %.2f\n", precio);
+		printf("DNI del monitor que realizó el plan: %s\n", dni_monitor);
+	}
+	EXEC SQL WHENEVER NOT FOUND CONTINUE;
+	printf("\n> Planes recuperados: %d.\n", sqlca.sqlerrd[2]);
+	EXEC SQL CLOSE cursor_planes;
+	EXEC SQL COMMIT;
+}

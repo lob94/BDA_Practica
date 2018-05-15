@@ -1,0 +1,32 @@
+void engadir_produto_carrinho() {
+
+  EXEC SQL WHENEVER SQLERROR DO XestionaExcepcion();
+
+  EXEC SQL BEGIN DECLARE SECTION;
+    char DNI[MAXLEN];
+    int idCarr, idProd, cantidade;
+    char DNIr[MAXLEN];
+  EXEC SQL END DECLARE SECTION;
+
+  printf("\n> Funcion a�adir_produto_carrinho()\n");
+  printf("Introduza o DNI do usuario: \n");
+  get_string(DNI, 10);
+
+  EXEC SQL SELECT idcarri�o
+          INTO :idCarr 
+          FROM carri�o 
+          WHERE usuario_dni = :DNI;
+
+  printf("Introduza o id do produto: \n");
+  idProd=get_int();
+
+  printf("Introduza a cantidade do produto: \n");
+  cantidade=get_int();
+
+  EXEC SQL INSERT INTO li�acarri�o (cantidade, carri�o_idcarri�o, produto_idproduto)
+           VALUES (:cantidade, :idCarr, :idProd);
+
+  EXEC SQL COMMIT;
+    printf("\n> Produto(s) engadido(s) con �xito � carri�o.\n");
+
+}

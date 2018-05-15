@@ -1,0 +1,13 @@
+\select@language {spanish}
+\contentsline {section}{\numberline {1}Introducci\IeC {\'o}n}{2}{section.1}
+\contentsline {section}{\numberline {2}Aclaraciones}{2}{section.2}
+\contentsline {section}{\numberline {3}Diagrama entidad relaci\IeC {\'o}n}{2}{section.3}
+\contentsline {section}{\numberline {4}Modelo relacional}{3}{section.4}
+\contentsline {section}{\numberline {5}Diccionario de datos}{3}{section.5}
+\contentsline {subsection}{\numberline {5.1}Cliente}{3}{subsection.5.1}
+\contentsline {subsection}{\numberline {5.2}Monitor}{4}{subsection.5.2}
+\contentsline {subsection}{\numberline {5.3}Plan a medida}{4}{subsection.5.3}
+\contentsline {subsection}{\numberline {5.4}Ejercicio}{5}{subsection.5.4}
+\contentsline {subsection}{\numberline {5.5}L\IeC {\'\i }nea de plan}{5}{subsection.5.5}
+\contentsline {section}{\numberline {6}Datos almacenados en las tablas}{6}{section.6}
+\contentsline {section}{\numberline {7}Restricciones en la implementaci\IeC {\'o}n}{7}{section.7}
